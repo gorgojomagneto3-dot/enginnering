@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Note } from '@/types';
-import { getNotes, saveNotes } from '@/lib/storage';
-import { generateId } from '@/lib/utils';
+import { getNotes, createNote, updateNote, deleteNote as apiDeleteNote } from '@/lib/api-client';
 import { Plus, Search, StickyNote, Trash2, Edit2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -13,6 +12,7 @@ export default function NotesEditor() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -21,47 +21,59 @@ export default function NotesEditor() {
   });
 
   useEffect(() => {
-    setNotes(getNotes());
+    loadNotes();
   }, []);
 
-  const createOrUpdateNote = () => {
-    if (!formData.title || !formData.content) return;
-
-    if (selectedNote && isEditing) {
-      const updatedNotes = notes.map(note =>
-        note.id === selectedNote.id
-          ? {
-              ...note,
-              ...formData,
-              tags: formData.tags.split(',').map(t => t.trim()).filter(t => t),
-              updatedAt: new Date(),
-            }
-          : note
-      );
-      setNotes(updatedNotes);
-      saveNotes(updatedNotes);
-    } else {
-      const note: Note = {
-        id: generateId(),
-        ...formData,
-        tags: formData.tags.split(',').map(t => t.trim()).filter(t => t),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const updatedNotes = [...notes, note];
-      setNotes(updatedNotes);
-      saveNotes(updatedNotes);
+  const loadNotes = async () => {
+    try {
+      const data = await getNotes();
+      setNotes(data);
+    } catch (error) {
+      console.error('Failed to load notes:', error);
+    } finally {
+      setIsLoading(false);
     }
-
-    resetForm();
   };
 
-  const deleteNote = (id: string) => {
-    const updatedNotes = notes.filter(note => note.id !== id);
-    setNotes(updatedNotes);
-    saveNotes(updatedNotes);
-    if (selectedNote?.id === id) {
-      setSelectedNote(null);
+  const createOrUpdateNote = async () => {
+    if (!formData.title || !formData.content) return;
+
+    try {
+      const tags = formData.tags.split(',').map(t => t.trim()).filter(t => t);
+      
+      if (selectedNote && isEditing) {
+        const updated = await updateNote(selectedNote.id, {
+          title: formData.title,
+          content: formData.content,
+          subject: formData.subject,
+          tags,
+        });
+        setNotes(notes.map(note => note.id === selectedNote.id ? updated : note));
+      } else {
+        const created = await createNote({
+          title: formData.title,
+          content: formData.content,
+          subject: formData.subject,
+          tags,
+        });
+        setNotes([...notes, created]);
+      }
+      resetForm();
+    } catch (error) {
+      console.error('Failed to save note:', error);
+    }
+  };
+
+  const deleteNoteHandler = async (id: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta nota?')) return;
+    try {
+      await apiDeleteNote(id);
+      setNotes(notes.filter(note => note.id !== id));
+      if (selectedNote?.id === id) {
+        setSelectedNote(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete note:', error);
     }
   };
 
@@ -93,6 +105,10 @@ export default function NotesEditor() {
     note.subject.toLowerCase().includes(searchTerm.toLowerCase()) ||
     note.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64">Cargando notas...</div>;
+  }
 
   return (
     <div className="grid lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
@@ -245,7 +261,7 @@ export default function NotesEditor() {
                     <Edit2 className="w-5 h-5" />
                   </button>
                   <button
-                    onClick={() => deleteNote(selectedNote.id)}
+                    onClick={() => deleteNoteHandler(selectedNote.id)}
                     className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   >
                     <Trash2 className="w-5 h-5" />
