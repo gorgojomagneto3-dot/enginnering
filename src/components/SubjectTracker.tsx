@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Subject, Topic } from '@/types';
-import { getSubjects, saveSubjects } from '@/lib/storage';
-import { generateId } from '@/lib/utils';
+import { getSubjects, createSubject, getTopics, createTopic, updateTopic, deleteSubject as apiDeleteSubject, deleteTopic as apiDeleteTopic } from '@/lib/api-client';
 import { Plus, BookOpen, Trash2, CheckCircle2 } from 'lucide-react';
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
@@ -14,89 +13,145 @@ export default function SubjectTracker() {
   const [newSubject, setNewSubject] = useState({ name: '', color: COLORS[0] });
   const [expandedSubject, setExpandedSubject] = useState<string | null>(null);
   const [newTopic, setNewTopic] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setSubjects(getSubjects());
+    loadSubjects();
   }, []);
 
-  const addSubject = () => {
+  const loadSubjects = async () => {
+    try {
+      const data = await getSubjects();
+      // Initialize topics as empty array since API doesn't return them nested by default
+      const subjectsWithTopics = data.map(s => ({ ...s, topics: s.topics || [] }));
+      setSubjects(subjectsWithTopics);
+    } catch (error) {
+      console.error('Failed to load subjects:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleExpand = async (subjectId: string) => {
+    if (expandedSubject === subjectId) {
+      setExpandedSubject(null);
+      return;
+    }
+    setExpandedSubject(subjectId);
+    
+    // Fetch topics if they haven't been loaded yet (or refresh them)
+    try {
+      const topics = await getTopics(subjectId);
+      setSubjects(prev => prev.map(s => 
+        s.id === subjectId ? { ...s, topics } : s
+      ));
+    } catch (error) {
+      console.error('Failed to load topics:', error);
+    }
+  };
+
+  const addSubject = async () => {
     if (!newSubject.name) return;
 
-    const subject: Subject = {
-      id: generateId(),
-      ...newSubject,
-      progress: 0,
-      topics: [],
-    };
+    try {
+      const created = await createSubject({
+        ...newSubject,
+        progress: 0,
+      });
 
-    const updatedSubjects = [...subjects, subject];
-    setSubjects(updatedSubjects);
-    saveSubjects(updatedSubjects);
-    setNewSubject({ name: '', color: COLORS[0] });
-    setShowForm(false);
+      setSubjects([...subjects, { ...created, topics: [] }]);
+      setNewSubject({ name: '', color: COLORS[0] });
+      setShowForm(false);
+    } catch (error) {
+      console.error('Failed to create subject:', error);
+    }
   };
 
-  const addTopic = (subjectId: string) => {
+  const addTopic = async (subjectId: string) => {
     if (!newTopic) return;
 
-    const updatedSubjects = subjects.map(subject => {
-      if (subject.id === subjectId) {
-        const topic: Topic = {
-          id: generateId(),
-          name: newTopic,
-          completed: false,
-          subjectId,
-        };
-        const topics = [...subject.topics, topic];
-        const completedCount = topics.filter(t => t.completed).length;
-        const progress = topics.length > 0 ? Math.round((completedCount / topics.length) * 100) : 0;
-        return { ...subject, topics, progress };
-      }
-      return subject;
-    });
+    try {
+      const subject = subjects.find(s => s.id === subjectId);
+      const order = subject ? subject.topics.length : 0;
 
-    setSubjects(updatedSubjects);
-    saveSubjects(updatedSubjects);
-    setNewTopic('');
+      const created = await createTopic({
+        subjectId,
+        name: newTopic,
+        order,
+        isCompleted: false
+      });
+
+      setSubjects(prev => prev.map(s => {
+        if (s.id === subjectId) {
+          return { ...s, topics: [...s.topics, created] };
+        }
+        return s;
+      }));
+      setNewTopic('');
+    } catch (error) {
+      console.error('Failed to create topic:', error);
+    }
   };
 
-  const toggleTopic = (subjectId: string, topicId: string) => {
-    const updatedSubjects = subjects.map(subject => {
-      if (subject.id === subjectId) {
-        const topics = subject.topics.map(topic =>
-          topic.id === topicId ? { ...topic, completed: !topic.completed } : topic
-        );
-        const completedCount = topics.filter(t => t.completed).length;
-        const progress = topics.length > 0 ? Math.round((completedCount / topics.length) * 100) : 0;
-        return { ...subject, topics, progress };
-      }
-      return subject;
-    });
+  const toggleTopic = async (subjectId: string, topicId: string) => {
+    const subject = subjects.find(s => s.id === subjectId);
+    const topic = subject?.topics.find(t => t.id === topicId);
+    if (!topic) return;
 
-    setSubjects(updatedSubjects);
-    saveSubjects(updatedSubjects);
+    try {
+      const updated = await updateTopic(topicId, {
+        isCompleted: !topic.completed
+      });
+
+      setSubjects(prev => prev.map(s => {
+        if (s.id === subjectId) {
+          const updatedTopics = s.topics.map(t => 
+            t.id === topicId ? { ...t, completed: updated.completed } : t
+          );
+          // Recalculate progress locally or fetch from server
+          // For now, simple local calculation
+          const completedCount = updatedTopics.filter(t => t.completed).length;
+          const progress = Math.round((completedCount / updatedTopics.length) * 100);
+          
+          return { ...s, topics: updatedTopics, progress };
+        }
+        return s;
+      }));
+    } catch (error) {
+      console.error('Failed to update topic:', error);
+    }
   };
 
-  const deleteSubject = (id: string) => {
-    const updatedSubjects = subjects.filter(s => s.id !== id);
-    setSubjects(updatedSubjects);
-    saveSubjects(updatedSubjects);
+  const deleteSubject = async (id: string) => {
+    if (!confirm('¿Estás seguro de eliminar esta materia?')) return;
+    try {
+      await apiDeleteSubject(id);
+      setSubjects(subjects.filter(s => s.id !== id));
+    } catch (error) {
+      console.error('Failed to delete subject:', error);
+    }
   };
 
-  const deleteTopic = (subjectId: string, topicId: string) => {
-    const updatedSubjects = subjects.map(subject => {
-      if (subject.id === subjectId) {
-        const topics = subject.topics.filter(t => t.id !== topicId);
-        const completedCount = topics.filter(t => t.completed).length;
-        const progress = topics.length > 0 ? Math.round((completedCount / topics.length) * 100) : 0;
-        return { ...subject, topics, progress };
-      }
-      return subject;
-    });
-
-    setSubjects(updatedSubjects);
-    saveSubjects(updatedSubjects);
+  const deleteTopic = async (subjectId: string, topicId: string) => {
+    try {
+      await apiDeleteTopic(topicId);
+      setSubjects(prev => prev.map(s => {
+        if (s.id === subjectId) {
+          const updatedTopics = s.topics.filter(t => t.id !== topicId);
+          const completedCount = updatedTopics.filter(t => t.completed).length;
+          const progress = updatedTopics.length > 0 ? Math.round((completedCount / updatedTopics.length) * 100) : 0;
+          return { ...s, topics: updatedTopics, progress };
+        }
+        return s;
+      }));
+    } catch (error) {
+      console.error('Failed to delete topic:', error);
+    }
   };
+
+  if (isLoading) {
+    return <div className="flex justify-center p-8">Cargando materias...</div>;
+  }
 
   return (
     <div className="space-y-6">

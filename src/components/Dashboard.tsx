@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getTasks, getSubjects, getNotes, getPomodoroSessions } from '@/lib/storage';
+import { getTasks, getSubjects, getNotes, getPomodoroSessions } from '@/lib/api-client';
 import { Task, Subject, Note, PomodoroSession } from '@/types';
 import { CheckCircle2, BookOpen, StickyNote, Timer, TrendingUp, Calendar, AlertCircle } from 'lucide-react';
 import { format, isToday, isTomorrow, isPast } from 'date-fns';
@@ -13,13 +13,37 @@ export default function Dashboard() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [sessions, setSessions] = useState<PomodoroSession[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setTasks(getTasks());
-    setSubjects(getSubjects());
-    setNotes(getNotes());
-    setSessions(getPomodoroSessions());
+    const fetchData = async () => {
+      try {
+        const [tasksData, subjectsData, notesData, sessionsData] = await Promise.all([
+          getTasks(),
+          getSubjects(),
+          getNotes(),
+          getPomodoroSessions()
+        ]);
+        setTasks(tasksData);
+        setSubjects(subjectsData);
+        setNotes(notesData);
+        setSessions(sessionsData);
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
   }, []);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   const pendingTasks = tasks.filter(t => t.status === 'pending' || t.status === 'in-progress');
   const todayTasks = pendingTasks.filter(t => isToday(t.dueDate));
