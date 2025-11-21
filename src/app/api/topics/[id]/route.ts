@@ -13,17 +13,18 @@ const updateTopicSchema = z.object({
   order: z.number().optional(),
 });
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = await req.json();
     const validatedData = updateTopicSchema.parse(body);
+    const { id } = await params;
 
     await connectDB();
     const topic = await Topic.findOneAndUpdate(
-      { _id: params.id, userId: session.user.id },
+      { _id: id, userId: session.user.id },
       validatedData,
       { new: true }
     );
@@ -39,13 +40,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const { id } = await params;
     await connectDB();
-    const topic = await Topic.findOneAndDelete({ _id: params.id, userId: session.user.id });
+    const topic = await Topic.findOneAndDelete({ _id: id, userId: session.user.id });
 
     if (!topic) return NextResponse.json({ error: 'Topic not found' }, { status: 404 });
 
