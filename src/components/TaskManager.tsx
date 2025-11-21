@@ -1,58 +1,145 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Task } from '@/types';
-import { getTasks, saveTasks } from '@/lib/storage';
-import { generateId } from '@/lib/utils';
-import { Plus, Calendar, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { Task, Subject } from '@/types';
+import { Plus, Calendar, AlertCircle, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { useSession } from 'next-auth/react';
 
 export default function TaskManager() {
+  const { data: session } = useSession();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
     dueDate: '',
     priority: 'medium' as Task['priority'],
-    subject: '',
+    subjectId: '',
   });
 
   useEffect(() => {
-    setTasks(getTasks());
-  }, []);
+    if (session) {
+      fetchData();
+    }
+  }, [session]);
 
-  const addTask = () => {
-    if (!newTask.title || !newTask.dueDate) return;
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [tasksRes, subjectsRes] = await Promise.all([
+        fetch('/api/tasks'),
+        fetch('/api/subjects')
+      ]);
 
-    const task: Task = {
-      id: generateId(),
-      ...newTask,
-      dueDate: new Date(newTask.dueDate),
-      status: 'pending',
-      createdAt: new Date(),
-    };
+      if (tasksRes.ok && subjectsRes.ok) {
+        const tasksData = await tasksRes.json();
+        const subjectsData = await subjectsRes.json();
 
-    const updatedTasks = [...tasks, task];
-    setTasks(updatedTasks);
-    saveTasks(updatedTasks);
-    setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', subject: '' });
-    setShowForm(false);
+        const mappedTasks = tasksData.tasks.map((t: any) => ({
+          ...t,
+          id: t._id,
+          dueDate: t.dueDate ? new Date(t.dueDate) : new Date(),
+          createdAt: new Date(t.createdAt),
+          subject: t.subjectId // Map subjectId to subject for compatibility
+        }));
+
+        const mappedSubjects = subjectsData.subjects.map((s: any) => ({
+          ...s,
+          id: s._id
+        }));
+
+        setTasks(mappedTasks);
+        setSubjects(mappedSubjects);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateTaskStatus = (id: string, status: Task['status']) => {
+  const addTask = async () => {
+    if (!newTask.title || !newTask.dueDate) return;
+
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTask.title,
+          description: newTask.description,
+          dueDate: new Date(newTask.dueDate).toISOString(),
+          priority: newTask.priority,
+          subjectId: newTask.subjectId || undefined,
+          status: 'pending'
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const createdTask = {
+          ...data.task,
+          id: data.task._id,
+          dueDate: new Date(data.task.dueDate),
+          createdAt: new Date(data.task.createdAt),
+          subject: data.task.subjectId
+        };
+        
+        setTasks([...tasks, createdTask]);
+        setNewTask({ title: '', description: '', dueDate: '', priority: 'medium', subjectId: '' });
+        setShowForm(false);
+      }
+    } catch (error) {
+      console.error('Error creating task:', error);
+    }
+  };
+
+  const updateTaskStatus = async (id: string, status: Task['status']) => {
+    // Optimistic update
+    const originalTasks = [...tasks];
     const updatedTasks = tasks.map(task =>
       task.id === id ? { ...task, status } : task
     );
     setTasks(updatedTasks);
-    saveTasks(updatedTasks);
+
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+
+      if (!res.ok) {
+        setTasks(originalTasks); // Revert on error
+      }
+    } catch (error) {
+      setTasks(originalTasks); // Revert on error
+      console.error('Error updating task:', error);
+    }
   };
 
-  const deleteTask = (id: string) => {
+  const deleteTask = async (id: string) => {
+    // Optimistic update
+    const originalTasks = [...tasks];
     const updatedTasks = tasks.filter(task => task.id !== id);
     setTasks(updatedTasks);
-    saveTasks(updatedTasks);
+
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        setTasks(originalTasks); // Revert on error
+      }
+    } catch (error) {
+      setTasks(originalTasks); // Revert on error
+      console.error('Error deleting task:', error);
+    }
   };
 
   const getPriorityColor = (priority: Task['priority']) => {
@@ -60,6 +147,7 @@ export default function TaskManager() {
       case 'high': return 'bg-red-100 text-red-800 border-red-300';
       case 'medium': return 'bg-yellow-100 text-yellow-800 border-yellow-300';
       case 'low': return 'bg-green-100 text-green-800 border-green-300';
+      default: return 'bg-gray-100 text-gray-800 border-gray-300';
     }
   };
 
@@ -70,6 +158,20 @@ export default function TaskManager() {
       default: return <AlertCircle className="w-5 h-5 text-gray-400" />;
     }
   };
+
+  const getSubjectName = (subjectId?: string) => {
+    if (!subjectId) return null;
+    const subject = subjects.find(s => s.id === subjectId);
+    return subject ? subject.name : null;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center py-12">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -102,13 +204,20 @@ export default function TaskManager() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               rows={3}
             />
-            <input
-              type="text"
-              placeholder="Materia"
-              value={newTask.subject}
-              onChange={(e) => setNewTask({ ...newTask, subject: e.target.value })}
+            
+            <select
+              value={newTask.subjectId}
+              onChange={(e) => setNewTask({ ...newTask, subjectId: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
+            >
+              <option value="">Seleccionar Materia (Opcional)</option>
+              {subjects.map(subject => (
+                <option key={subject.id} value={subject.id}>
+                  {subject.name}
+                </option>
+              ))}
+            </select>
+
             <div className="flex gap-4">
               <input
                 type="date"
@@ -172,9 +281,9 @@ export default function TaskManager() {
                       <Calendar className="w-4 h-4" />
                       {format(task.dueDate, "d 'de' MMMM, yyyy", { locale: es })}
                     </span>
-                    {task.subject && (
+                    {getSubjectName(task.subject) && (
                       <span className="bg-gray-100 px-2 py-1 rounded">
-                        {task.subject}
+                        {getSubjectName(task.subject)}
                       </span>
                     )}
                   </div>
