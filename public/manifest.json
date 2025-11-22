@@ -1,0 +1,55 @@
+{
+  "name": "StudyFlow - Organizador Universitario",
+  "short_name": "StudyFlow",
+  "description": "Plataforma profesional para estudiantes universitarios con diseño estilo Apple",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4F46E5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "640x1136",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Agregar Tarea",
+      "short_name": "Nueva Tarea",
+      "description": "Crear una nueva tarea rápidamente",
+      "url": "/tasks",
+      "icons": [{ "src": "/icon-task.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Pomodoro",
+      "short_name": "Pomodoro",
+      "description": "Iniciar sesión Pomodoro",
+      "url": "/pomodoro",
+      "icons": [{ "src": "/icon-timer.png", "sizes": "96x96" }]
+    }
+  ]
+}

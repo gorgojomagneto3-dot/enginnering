@@ -24,8 +24,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className="ml-72 min-h-screen bg-gray-50 dark:bg-gray-950 transition-all duration-300">
-      <main className="p-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 transition-all duration-300">
+      <main className="p-4 md:p-8">
         <Dashboard />
       </main>
     </div>

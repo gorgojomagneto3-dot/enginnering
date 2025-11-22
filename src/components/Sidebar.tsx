@@ -38,7 +38,8 @@ export default function Sidebar() {
     <aside
       className={cn(
         'fixed left-0 top-0 h-screen bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 transition-all duration-300 z-50 glass',
-        collapsed ? 'w-20' : 'w-72'
+        collapsed ? 'w-20' : 'w-72',
+        'md:flex hidden' // Hide on mobile by default
       )}
     >
       <div className="flex flex-col h-full p-4">
